@@ -1,0 +1,63 @@
+# GitHub Actions 工作流
+# 检测到 sync-* 标签时自动推送代码到 main 分支
+
+name: Auto Push on Tag
+
+on:
+  push:
+    tags:
+      - 'sync-*'
+
+# 授予写入权限
+permissions:
+  contents: write
+
+jobs:
+  push-code:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Get tag info
+        id: tag_info
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          COMMIT_SHA=$(git rev-list -n 1 $TAG_NAME)
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "🏷️ Tag: $TAG_NAME"
+          echo "📝 Commit: $COMMIT_SHA"
+      
+      - name: Push commit to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 获取标签指向的 commit
+          TAG_COMMIT=${{ steps.tag_info.outputs.commit_sha }}
+          
+          # 切换到 main 分支
+          git checkout main
+          
+          # 检查 main 是否已经包含这个 commit
+          if git merge-base --is-ancestor $TAG_COMMIT HEAD; then
+            echo "✓ main 分支已包含此 commit，无需推送"
+          else
+            # 将 commit 合并到 main
+            git merge $TAG_COMMIT --no-edit
+            git push origin main
+            echo "✓ 已推送到 main 分支"
+          fi
+      
+      - name: Summary
+        run: |
+          echo "## 同步完成 ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **标签**: ${{ steps.tag_info.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ steps.tag_info.outputs.commit_sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **时间**: $(date)" >> $GITHUB_STEP_SUMMARY
